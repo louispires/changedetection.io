@@ -2,9 +2,11 @@ from .. import difference_detection_processor
 from ..exceptions import ProcessorException
 from . import Restock
 from loguru import logger
+from bs4 import BeautifulSoup
 
 import urllib3
 import time
+import re
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 name = 'Re-stock & Price detection for pages with a SINGLE product'
@@ -28,27 +30,76 @@ def _search_prop_by_value(matches, value):
 
 def _deduplicate_prices(data):
     import re
-
+    
     '''
-    Some price data has multiple entries, OR it has a single entry with ['$159', '159', 159, "$ 159"] or just "159"
+    Some price data has multiple entries, OR it has a single entry with
+    ['$159', '159', 159, "$ 159", "R 3,299"] or just "159"
     Get all the values, clean it and add it to a set then return the unique values
     '''
     unique_data = set()
 
-    # Return the complete 'datum' where its price was not seen before
-    for datum in data:
+    def normalize(value):
+        # Convert to string, strip spaces
+        s = str(value).strip()
+        if not s:
+            return None
 
+        # Remove currency symbols and spaces (keep digits, dots, commas)
+        s = re.sub(r'[^\d.,]', '', s)
+
+        # Remove thousands separators (commas)
+        s = s.replace(',', '')
+
+        # Convert to float
+        try:
+            return float(s)
+        except ValueError:
+            return None
+
+    # Process data
+    for datum in data:
         if isinstance(datum.value, list):
-            # Process each item in the list
-            normalized_value = set([float(re.sub(r'[^\d.]', '', str(item))) for item in datum.value if str(item).strip()])
-            unique_data.update(normalized_value)
+            for item in datum.value:
+                v = normalize(item)
+                if v is not None:
+                    unique_data.add(v)
         else:
-            # Process single value
-            v = float(re.sub(r'[^\d.]', '', str(datum.value)))
-            unique_data.add(v)
+            v = normalize(datum.value)
+            if v is not None:
+                unique_data.add(v)
 
     return list(unique_data)
 
+
+def extract_price_from_html(html_content):
+    """
+    Fallback parser when extruct does not return usable data.
+    Only returns the FIRST price on the page (buybox).
+    Extracts both price and currency.
+    """
+    from bs4 import BeautifulSoup
+    import re
+
+    soup = BeautifulSoup(html_content, "html.parser")
+
+    # Find the first element with a class containing 'currency'
+    el = soup.find(class_=re.compile(r'currency'))
+    if not el:
+        return None, None
+
+    text = el.get_text(strip=True)
+    if not text:
+        return None, None
+
+    # Extract currency (any non-digit at start, e.g. "R", "$", "€")
+    match = re.match(r"([^\d]+)", text)
+    currency = match.group(1).strip() if match else None
+
+    # Normalize price using helper
+    price = _deduplicate_prices([type("D", (), {"value": text})])
+    price = price[0] if price else None
+
+    return price, currency
 
 # should return Restock()
 # add casting?
@@ -86,7 +137,7 @@ def get_itemprop_availability(html_content) -> Restock:
 
         price_result = _deduplicate_prices(price_parse.find(data))
         if price_result:
-            # Right now, we just support single product items, maybe we will store the whole actual metadata seperately in teh future and
+            # Right now, we just support single product items, maybe we will store the whole actual metadata seperately in the future and
             # parse that for the UI?
             if len(price_result) > 1 and len(price_result) > 1:
                 # See of all prices are different, in the case that one product has many embedded data types with the same price
@@ -120,6 +171,27 @@ def get_itemprop_availability(html_content) -> Restock:
                     value['availability'] = _search_prop_by_value([match.value], "product:availability")
                 if not value.get('currency'):
                     value['currency'] = _search_prop_by_value([match.value], "price:currency")
+
+        # lastly, try utilize raw HTML search for the price and availability
+        if not value.get('price'):
+            # ---- Fallback to raw HTML parsing ----
+            logger.debug("Falling back to BeautifulSoup parsing for price info...")
+            price, currency = extract_price_from_html(html_content)
+            if price:
+                value['price'] = price
+            if not value['currency']:
+                if currency:
+                    value['currency'] = currency
+
+        if not value.get('availability'):
+            # Availability from classes or text
+            soup = BeautifulSoup(html_content, "html.parser")
+            availability_texts = soup.find_all("div", {"data-ref": "in-stock-indicator"})
+            if availability_texts:
+                value['availability'] = "instock"
+            else:
+                value['availability'] = "outofstock"
+
     logger.trace(f"Processed with Extruct in {time.time()-now:.3f}s")
 
     return value
