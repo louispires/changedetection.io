@@ -95,7 +95,7 @@ def test_check_markup_include_filters_restriction(client, live_server, measure_m
     # Add our URL to the import page
     res = client.post(
         url_for("ui.ui_edit.edit_page", uuid="first"),
-        data={"include_filters": include_filters, "url": test_url, "tags": "", "headers": "", 'fetch_backend': "html_requests"},
+        data={"include_filters": include_filters, "url": test_url, "tags": "", "headers": "", 'fetch_backend': "html_requests", "time_between_check_use_default": "y"},
         follow_redirects=True
     )
     assert b"Updated watch." in res.data
@@ -116,10 +116,10 @@ def test_check_markup_include_filters_restriction(client, live_server, measure_m
     # Give the thread time to pick it up
     time.sleep(sleep_time_for_fetch_thread)
 
-    # It should have 'unviewed' still
+    # It should have 'has-unread-changes' still
     # Because it should be looking at only that 'sametext' id
     res = client.get(url_for("watchlist.index"))
-    assert b'unviewed' in res.data
+    assert b'has-unread-changes' in res.data
 
 
 # Tests the whole stack works with the CSS Filter
@@ -154,7 +154,8 @@ def test_check_multiple_filters(client, live_server, measure_memory_usage):
               "url": test_url,
               "tags": "",
               "headers": "",
-              'fetch_backend': "html_requests"},
+              'fetch_backend': "html_requests",
+              "time_between_check_use_default": "y"},
         follow_redirects=True
     )
     assert b"Updated watch." in res.data
@@ -208,7 +209,8 @@ def test_filter_is_empty_help_suggestion(client, live_server, measure_memory_usa
               "url": test_url,
               "tags": "",
               "headers": "",
-              'fetch_backend': "html_requests"},
+              'fetch_backend': "html_requests",
+              "time_between_check_use_default": "y"},
         follow_redirects=True
     )
     assert b"Updated watch." in res.data

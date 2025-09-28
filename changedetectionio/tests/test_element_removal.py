@@ -171,6 +171,7 @@ def test_element_removal_full(client, live_server, measure_memory_usage):
             "tags": "",
             "headers": "",
             "fetch_backend": "html_requests",
+            "time_between_check_use_default": "y",
         },
         follow_redirects=True,
     )
@@ -189,7 +190,7 @@ def test_element_removal_full(client, live_server, measure_memory_usage):
 
     wait_for_all_checks(client)
 
-    # so that we set the state to 'unviewed' after all the edits
+    # so that we set the state to 'has-unread-changes' after all the edits
     client.get(url_for("ui.ui_views.diff_history_page", uuid="first"))
 
     #  Make a change to header/footer/nav
@@ -245,6 +246,7 @@ body > table > tr:nth-child(3) > td:nth-child(3)""",
                 "url": test_url,
                 "tags": "",
                 "fetch_backend": "html_requests",
+                "time_between_check_use_default": "y",
             },
             follow_redirects=True,
         )

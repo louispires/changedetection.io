@@ -86,7 +86,8 @@ def test_check_block_changedetection_text_NOT_present(client, live_server, measu
         url_for("ui.ui_edit.edit_page", uuid="first"),
         data={"text_should_not_be_present": ignore_text,
               "url": test_url,
-              'fetch_backend': "html_requests"
+              'fetch_backend': "html_requests",
+              "time_between_check_use_default": "y"
               },
         follow_redirects=True
     )
@@ -106,9 +107,9 @@ def test_check_block_changedetection_text_NOT_present(client, live_server, measu
     # Give the thread time to pick it up
     wait_for_all_checks(client)
 
-    # It should report nothing found (no new 'unviewed' class)
+    # It should report nothing found (no new 'has-unread-changes' class)
     res = client.get(url_for("watchlist.index"))
-    assert b'unviewed' not in res.data
+    assert b'has-unread-changes' not in res.data
     assert b'/test-endpoint' in res.data
 
     # The page changed, BUT the text is still there, just the rest of it changes, we should not see a change
@@ -119,9 +120,9 @@ def test_check_block_changedetection_text_NOT_present(client, live_server, measu
     # Give the thread time to pick it up
     wait_for_all_checks(client)
 
-    # It should report nothing found (no new 'unviewed' class)
+    # It should report nothing found (no new 'has-unread-changes' class)
     res = client.get(url_for("watchlist.index"))
-    assert b'unviewed' not in res.data
+    assert b'has-unread-changes' not in res.data
     assert b'/test-endpoint' in res.data
 
     # 2548
@@ -130,7 +131,7 @@ def test_check_block_changedetection_text_NOT_present(client, live_server, measu
     client.get(url_for("ui.form_watch_checknow"), follow_redirects=True)
     wait_for_all_checks(client)
     res = client.get(url_for("watchlist.index"))
-    assert b'unviewed' not in res.data
+    assert b'has-unread-changes' not in res.data
 
 
     # Now we set a change where the text is gone AND its different content, it should now trigger
@@ -138,7 +139,7 @@ def test_check_block_changedetection_text_NOT_present(client, live_server, measu
     client.get(url_for("ui.form_watch_checknow"), follow_redirects=True)
     wait_for_all_checks(client)
     res = client.get(url_for("watchlist.index"))
-    assert b'unviewed' in res.data
+    assert b'has-unread-changes' in res.data
 
 
 

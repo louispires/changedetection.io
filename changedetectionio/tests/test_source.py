@@ -43,9 +43,9 @@ def test_check_basic_change_detection_functionality_source(client, live_server, 
 
     wait_for_all_checks(client)
 
-    # Now something should be ready, indicated by having a 'unviewed' class
+    # Now something should be ready, indicated by having a 'has-unread-changes' class
     res = client.get(url_for("watchlist.index"))
-    assert b'unviewed' in res.data
+    assert b'has-unread-changes' in res.data
 
     res = client.get(
         url_for("ui.ui_views.diff_history_page", uuid="first"),
@@ -77,7 +77,7 @@ def test_check_ignore_elements(client, live_server, measure_memory_usage):
 
     client.post(
         url_for("ui.ui_edit.edit_page", uuid="first"),
-        data={"include_filters": 'span,p', "url": test_url, "tags": "", "subtractive_selectors": ".foobar-detection", 'fetch_backend': "html_requests"},
+        data={"include_filters": 'span,p', "url": test_url, "tags": "", "subtractive_selectors": ".foobar-detection", 'fetch_backend': "html_requests", "time_between_check_use_default": "y"},
         follow_redirects=True
     )
 

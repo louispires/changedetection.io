@@ -81,7 +81,8 @@ def test_trigger_functionality(client, live_server, measure_memory_usage):
         url_for("ui.ui_edit.edit_page", uuid="first"),
         data={"trigger_text": trigger_text,
               "url": test_url,
-              "fetch_backend": "html_requests"},
+              "fetch_backend": "html_requests",
+              "time_between_check_use_default": "y"},
         follow_redirects=True
     )
     assert b"Updated watch." in res.data
@@ -95,7 +96,7 @@ def test_trigger_functionality(client, live_server, measure_memory_usage):
 
 
     
-    # so that we set the state to 'unviewed' after all the edits
+    # so that we set the state to 'has-unread-changes' after all the edits
     client.get(url_for("ui.ui_views.diff_history_page", uuid="first"))
 
     # Trigger a check
@@ -103,9 +104,9 @@ def test_trigger_functionality(client, live_server, measure_memory_usage):
 
     wait_for_all_checks(client)
 
-    # It should report nothing found (no new 'unviewed' class)
+    # It should report nothing found (no new 'has-unread-changes' class)
     res = client.get(url_for("watchlist.index"))
-    assert b'unviewed' not in res.data
+    assert b'has-unread-changes' not in res.data
     assert b'/test-endpoint' in res.data
 
     #  Make a change
@@ -115,9 +116,9 @@ def test_trigger_functionality(client, live_server, measure_memory_usage):
     client.get(url_for("ui.form_watch_checknow"), follow_redirects=True)
     wait_for_all_checks(client)
 
-    # It should report nothing found (no new 'unviewed' class)
+    # It should report nothing found (no new 'has-unread-changes' class)
     res = client.get(url_for("watchlist.index"))
-    assert b'unviewed' not in res.data
+    assert b'has-unread-changes' not in res.data
 
     # Now set the content which contains the trigger text
     set_modified_with_trigger_text_response()
@@ -125,7 +126,7 @@ def test_trigger_functionality(client, live_server, measure_memory_usage):
     client.get(url_for("ui.form_watch_checknow"), follow_redirects=True)
     wait_for_all_checks(client)
     res = client.get(url_for("watchlist.index"))
-    assert b'unviewed' in res.data
+    assert b'has-unread-changes' in res.data
     
     # https://github.com/dgtlmoon/changedetection.io/issues/616
     # Apparently the actual snapshot that contains the trigger never shows

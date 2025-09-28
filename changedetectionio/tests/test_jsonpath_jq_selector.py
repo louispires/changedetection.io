@@ -257,7 +257,8 @@ def check_json_filter(json_filter, client, live_server):
               "url": test_url,
               "tags": "",
               "headers": "",
-              "fetch_backend": "html_requests"
+              "fetch_backend": "html_requests",
+              "time_between_check_use_default": "y"
               },
         follow_redirects=True
     )
@@ -279,9 +280,9 @@ def check_json_filter(json_filter, client, live_server):
     # Give the thread time to pick it up
     wait_for_all_checks(client)
 
-    # It should have 'unviewed' still
+    # It should have 'has-unread-changes' still
     res = client.get(url_for("watchlist.index"))
-    assert b'unviewed' in res.data
+    assert b'has-unread-changes' in res.data
 
     # Should not see this, because its not in the JSONPath we entered
     res = client.get(url_for("ui.ui_views.diff_history_page", uuid="first"))
@@ -328,7 +329,8 @@ def check_json_filter_bool_val(json_filter, client, live_server):
               "url": test_url,
               "tags": "",
               "headers": "",
-              "fetch_backend": "html_requests"
+              "fetch_backend": "html_requests",
+              "time_between_check_use_default": "y"
               },
         follow_redirects=True
     )
@@ -393,7 +395,8 @@ def check_json_ext_filter(json_filter, client, live_server):
               "url": test_url,
               "tags": "",
               "headers": "",
-              "fetch_backend": "html_requests"
+              "fetch_backend": "html_requests",
+              "time_between_check_use_default": "y"
               },
         follow_redirects=True
     )
@@ -415,14 +418,14 @@ def check_json_ext_filter(json_filter, client, live_server):
     # Give the thread time to pick it up
     wait_for_all_checks(client)
 
-    # It should have 'unviewed'
+    # It should have 'has-unread-changes'
     res = client.get(url_for("watchlist.index"))
-    assert b'unviewed' in res.data
+    assert b'has-unread-changes' in res.data
 
     res = client.get(url_for("ui.ui_views.preview_page", uuid="first"))
 
     # We should never see 'ForSale' because we are selecting on 'Sold' in the rule,
-    # But we should know it triggered ('unviewed' assert above)
+    # But we should know it triggered ('has-unread-changes' assert above)
     assert b'ForSale' not in res.data
     assert b'Sold' in res.data
 
@@ -462,7 +465,7 @@ def test_ignore_json_order(client, live_server, measure_memory_usage):
     wait_for_all_checks(client)
 
     res = client.get(url_for("watchlist.index"))
-    assert b'unviewed' not in res.data
+    assert b'has-unread-changes' not in res.data
 
     # Just to be sure it still works
     with open("test-datastore/endpoint-content.txt", "w") as f:
@@ -473,7 +476,7 @@ def test_ignore_json_order(client, live_server, measure_memory_usage):
     wait_for_all_checks(client)
 
     res = client.get(url_for("watchlist.index"))
-    assert b'unviewed' in res.data
+    assert b'has-unread-changes' in res.data
 
     res = client.get(url_for("ui.form_delete", uuid="all"), follow_redirects=True)
     assert b'Deleted' in res.data
