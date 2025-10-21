@@ -1,18 +1,88 @@
 
 import time
 import apprise
+from apprise import NotifyFormat
 from loguru import logger
 from .apprise_plugin.assets import apprise_asset, APPRISE_AVATAR_URL
+from ..notification_service import NotificationContextData
 
-def process_notification(n_object, datastore):
-    from changedetectionio.safe_jinja import render as jinja_render
+
+def markup_text_links_to_html(body):
+    """
+    Convert plaintext to HTML with clickable links.
+    Uses Jinja2's escape and Markup for XSS safety.
+    """
+    from linkify_it import LinkifyIt
+    from markupsafe import Markup, escape
+
+    linkify = LinkifyIt()
+
+    # Match URLs in the ORIGINAL text (before escaping)
+    matches = linkify.match(body)
+
+    if not matches:
+        # No URLs, just escape everything
+        return Markup(escape(body))
+
+    result = []
+    last_index = 0
+
+    # Process each URL match
+    for match in matches:
+        # Add escaped text before the URL
+        if match.index > last_index:
+            text_part = body[last_index:match.index]
+            result.append(escape(text_part))
+
+        # Add the link with escaped URL (both in href and display)
+        url = match.url
+        result.append(Markup(f'<a href="{escape(url)}">{escape(url)}</a>'))
+
+        last_index = match.last_index
+
+    # Add remaining escaped text
+    if last_index < len(body):
+        result.append(escape(body[last_index:]))
+
+    # Join all parts
+    return str(Markup(''.join(str(part) for part in result)))
+
+def notification_format_align_with_apprise(n_format : str):
+    """
+    Correctly align changedetection's formats with apprise's formats
+    Probably these are the same - but good to be sure.
+    :param n_format:
+    :return:
+    """
+
+    if n_format.lower().startswith('html'):
+        # Apprise only knows 'html' not 'htmlcolor' etc, which shouldnt matter here
+        n_format = NotifyFormat.HTML
+    elif n_format.lower().startswith('markdown'):
+        # probably the same but just to be safe
+        n_format = NotifyFormat.MARKDOWN
+    elif n_format.lower().startswith('text'):
+        # probably the same but just to be safe
+        n_format = NotifyFormat.TEXT
+    else:
+        n_format = NotifyFormat.TEXT
+
+    # Must be str for apprise notify body_format
+    return str(n_format)
+
+def process_notification(n_object: NotificationContextData, datastore):
+    from changedetectionio.jinja2_custom import render as jinja_render
     from . import default_notification_format_for_watch, default_notification_format, valid_notification_formats
     # be sure its registered
     from .apprise_plugin.custom_handlers import apprise_http_custom_handler
 
+    if not isinstance(n_object, NotificationContextData):
+        raise TypeError(f"Expected NotificationContextData, got {type(n_object)}")
+
     now = time.time()
     if n_object.get('notification_timestamp'):
         logger.trace(f"Time since queued {now-n_object['notification_timestamp']:.3f}s")
+
     # Insert variables into the notification content
     notification_parameters = create_notification_parameters(n_object, datastore)
 
@@ -24,7 +94,9 @@ def process_notification(n_object, datastore):
     # If we arrived with 'System default' then look it up
     if n_format == default_notification_format_for_watch and datastore.data['settings']['application'].get('notification_format') != default_notification_format_for_watch:
         # Initially text or whatever
-        n_format = datastore.data['settings']['application'].get('notification_format', valid_notification_formats[default_notification_format])
+        n_format = datastore.data['settings']['application'].get('notification_format', valid_notification_formats[default_notification_format]).lower()
+
+    n_format = notification_format_align_with_apprise(n_format=n_format)
 
     logger.trace(f"Complete notification body including Jinja and placeholders calculated in  {time.time() - now:.2f}s")
 
@@ -47,7 +119,11 @@ def process_notification(n_object, datastore):
 
             # Get the notification body from datastore
             n_body = jinja_render(template_str=n_object.get('notification_body', ''), **notification_parameters)
-            if n_object.get('notification_format', '').startswith('HTML'):
+
+            if n_object.get('markup_text_to_html'):
+                n_body = markup_text_links_to_html(body=n_body)
+
+            if n_format == str(NotifyFormat.HTML):
                 n_body = n_body.replace("\n", '<br>')
 
             n_title = jinja_render(template_str=n_object.get('notification_title', ''), **notification_parameters)
@@ -141,17 +217,15 @@ def process_notification(n_object, datastore):
 
 # Notification title + body content parameters get created here.
 # ( Where we prepare the tokens in the notification to be replaced with actual values )
-def create_notification_parameters(n_object, datastore):
-    from copy import deepcopy
-    from . import valid_tokens
+def create_notification_parameters(n_object: NotificationContextData, datastore):
+    if not isinstance(n_object, NotificationContextData):
+        raise TypeError(f"Expected NotificationContextData, got {type(n_object)}")
 
-    # in the case we send a test notification from the main settings, there is no UUID.
-    uuid = n_object['uuid'] if 'uuid' in n_object else ''
-
-    if uuid:
-        watch_title = datastore.data['watching'][uuid].label
+    watch = datastore.data['watching'].get(n_object['uuid'])
+    if watch:
+        watch_title = datastore.data['watching'][n_object['uuid']].label
         tag_list = []
-        tags = datastore.get_all_tags_for_watch(uuid)
+        tags = datastore.get_all_tags_for_watch(n_object['uuid'])
         if tags:
             for tag_uuid, tag in tags.items():
                 tag_list.append(tag.get('title'))
@@ -166,14 +240,10 @@ def create_notification_parameters(n_object, datastore):
 
     watch_url = n_object['watch_url']
 
-    diff_url = "{}/diff/{}".format(base_url, uuid)
-    preview_url = "{}/preview/{}".format(base_url, uuid)
+    diff_url = "{}/diff/{}".format(base_url, n_object['uuid'])
+    preview_url = "{}/preview/{}".format(base_url, n_object['uuid'])
 
-    # Not sure deepcopy is needed here, but why not
-    tokens = deepcopy(valid_tokens)
-
-    # Valid_tokens also used as a field validator
-    tokens.update(
+    n_object.update(
         {
             'base_url': base_url,
             'diff_url': diff_url,
@@ -181,13 +251,10 @@ def create_notification_parameters(n_object, datastore):
             'watch_tag': watch_tag if watch_tag is not None else '',
             'watch_title': watch_title if watch_title is not None else '',
             'watch_url': watch_url,
-            'watch_uuid': uuid,
+            'watch_uuid': n_object['uuid'],
         })
 
-    # n_object will contain diff, diff_added etc etc
-    tokens.update(n_object)
+    if watch:
+        n_object.update(datastore.data['watching'].get(n_object['uuid']).extra_notification_token_values())
 
-    if uuid:
-        tokens.update(datastore.data['watching'].get(uuid).extra_notification_token_values())
-
-    return tokens
+    return n_object

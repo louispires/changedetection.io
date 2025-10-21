@@ -1,10 +1,7 @@
 import copy
-import yaml
 import functools
 from flask import request, abort
 from loguru import logger
-from openapi_core import OpenAPI
-from openapi_core.contrib.flask import FlaskOpenAPIRequest
 from . import api_schema
 from ..model import watch_base
 
@@ -34,8 +31,16 @@ schema_delete_notification_urls['required'] = ['notification_urls']
 
 @functools.cache
 def get_openapi_spec():
+    """Lazy load OpenAPI spec and dependencies only when validation is needed."""
     import os
+    import yaml  # Lazy import - only loaded when API validation is actually used
+    from openapi_core import OpenAPI  # Lazy import - saves ~10.7 MB on startup
+
     spec_path = os.path.join(os.path.dirname(__file__), '../../docs/api-spec.yaml')
+    if not os.path.exists(spec_path):
+        # Possibly for pip3 packages
+        spec_path = os.path.join(os.path.dirname(__file__), '../docs/api-spec.yaml')
+
     with open(spec_path, 'r') as f:
         spec_dict = yaml.safe_load(f)
     _openapi_spec = OpenAPI.from_dict(spec_dict)
@@ -49,6 +54,9 @@ def validate_openapi_request(operation_id):
             try:
                 # Skip OpenAPI validation for GET requests since they don't have request bodies
                 if request.method.upper() != 'GET':
+                    # Lazy import - only loaded when actually validating a request
+                    from openapi_core.contrib.flask import FlaskOpenAPIRequest
+
                     spec = get_openapi_spec()
                     openapi_request = FlaskOpenAPIRequest(request)
                     result = spec.unmarshal_request(openapi_request)
