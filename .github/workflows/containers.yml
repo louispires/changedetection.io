@@ -16,6 +16,10 @@ on:
     branches:
       - master
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   metadata:
     runs-on: ubuntu-latest
@@ -37,19 +41,16 @@ jobs:
     runs-on: ubuntu-latest
     # If the testing workflow has a success, then we build to :latest
     # Or if we are in a tagged release scenario.
-    if: ${{ github.event.workflow_run.conclusion == 'success' }} || ${{ github.event.release.tag_name }} != ''
+    if: github.event_name == 'push' || github.event_name == 'release'
     steps:
       - uses: actions/checkout@v5
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v6
-        with:
-          python-version: 3.11
 
-      - name: Install dependencies
+      - name: Derive container image name
+        id: image
         run: |
-          python -m pip install --upgrade pip
-          pip install flake8 pytest
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          echo "name=ghcr.io/${REPO,,}" >> "$GITHUB_OUTPUT"
+        env:
+          REPO: ${{ github.repository }}
 
       - name: Create release metadata
         run: |
@@ -70,12 +71,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Login to Docker Hub Container Registry
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKER_HUB_USERNAME }}
-          password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
-
       - name: Set up Docker Buildx
         id: buildx
         uses: docker/setup-buildx-action@v3
@@ -93,8 +88,7 @@ jobs:
           context: ./
           file: ./Dockerfile
           push: true
-          tags: |
-            ${{ secrets.DOCKER_HUB_USERNAME }}/changedetection.io:dev,ghcr.io/${{ github.repository }}:dev
+          tags: ${{ steps.image.outputs.name }}:dev
           platforms: linux/amd64,linux/arm64,linux/arm/v7,linux/arm/v8
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -104,20 +98,18 @@ jobs:
 
       # A new tagged release is required, which builds :tag and :latest
       - name: Debug release info
-        if: github.event_name == 'release' && startsWith(github.event.release.tag_name, '0.')
+        if: github.event_name == 'release'
         run: |
           echo "Release tag: ${{ github.event.release.tag_name }}"
           echo "Github ref: ${{ github.ref }}"
           echo "Github ref name: ${{ github.ref_name }}"
           
       - name: Docker meta :tag
-        if: github.event_name == 'release' && startsWith(github.event.release.tag_name, '0.')
+        if: github.event_name == 'release'
         uses: docker/metadata-action@v5
         id: meta
         with:
-            images: |
-                ${{ secrets.DOCKER_HUB_USERNAME }}/changedetection.io
-                ghcr.io/dgtlmoon/changedetection.io
+            images: ${{ steps.image.outputs.name }}
             tags: |
                 type=semver,pattern={{version}},value=${{ github.event.release.tag_name }}
                 type=semver,pattern={{major}}.{{minor}},value=${{ github.event.release.tag_name }}
@@ -126,7 +118,7 @@ jobs:
 
       - name: Build and push :tag
         id: docker_build_tag_release
-        if: github.event_name == 'release' && startsWith(github.event.release.tag_name, '0.')
+        if: github.event_name == 'release'
         uses: docker/build-push-action@v6
         with:
           context: ./
@@ -136,9 +128,5 @@ jobs:
           platforms: linux/amd64,linux/arm64,linux/arm/v7,linux/arm/v8
           cache-from: type=gha
           cache-to: type=gha,mode=max
-# Looks like this was disabled
-#          provenance: false
-
-      - name: Image digest
-        run: echo step SHA ${{ steps.vars.outputs.sha_short }} tag ${{steps.vars.outputs.tag}} branch ${{steps.vars.outputs.branch}} digest ${{ steps.docker_build.outputs.digest }}
+          context: ./
 
